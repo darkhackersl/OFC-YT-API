@@ -3,8 +3,18 @@
   "builds": [
     {
       "src": "index.js",
-      "use": "@vercel/static-build",
+      "use": "@vercel/node",
       "config": {}
+    }
+  ],
+  "routes": [
+    {
+      "src": "/api/ytmp3",
+      "dest": "index.js"
+    },
+    {
+      "src": "/api/ytmp3/download",
+      "dest": "index.js"
     }
   ]
 }

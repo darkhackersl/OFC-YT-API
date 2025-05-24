@@ -1,12 +1,14 @@
 {
   "name": "ytmp3-api",
   "version": "1.0.0",
-  "main": "index.js",
+  "main": "api/download.js",
+  "type": "module",
   "scripts": {
-    "start": "node api/ytmp3.js"
+    "start": "node api/download.js"
   },
   "dependencies": {
-    "puppeteer": "^21.3.8"
+    "jsdom": "^24.0.0",
+    "node-fetch": "^3.4.0"
   }
 }
 

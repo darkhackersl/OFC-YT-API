@@ -2,14 +2,14 @@
   "version": 2,
   "builds": [
     {
-      "src": "api/ytmp3.js",
+      "src": "api/download.js",
       "use": "@vercel/node"
     }
   ],
   "routes": [
     {
-      "src": "/api/ytmp3",
-      "dest": "api/ytmp3.js"
+      "src": "/api/download",
+      "dest": "/api/download.js"
     }
   ]
 }

@@ -1,9 +1,19 @@
 import axios from "axios";
 
+// Helper to clean and standardize the YouTube URL
+function cleanYoutubeUrl(url) {
+  const match = url.match(/(?:youtu\.be\/|youtube\.com\/watch\?v=)([A-Za-z0-9_-]{11})/);
+  if (match && match[1]) {
+    return `https://youtu.be/${match[1]}`;
+  }
+  return null;
+}
+
 export default async function handler(req, res) {
   const { url } = req.query;
-  if (!url) {
-    return res.status(400).json({ error: "Missing YouTube URL parameter ?url=" });
+  const cleanedUrl = cleanYoutubeUrl(url || "");
+  if (!cleanedUrl) {
+    return res.status(400).json({ error: "Invalid or missing YouTube video URL" });
   }
 
   try {
@@ -12,10 +22,10 @@ export default async function handler(req, res) {
     const cdn = cdnRes.data?.cdn;
     if (!cdn) throw new Error("Failed to get CDN");
 
-    // 2. Get video info and available formats
+    // 2. Get video info
     const infoRes = await axios.post(
       `${cdn}/v2/info`,
-      { url },
+      { url: cleanedUrl },
       {
         headers: {
           "Content-Type": "application/json",
@@ -26,14 +36,16 @@ export default async function handler(req, res) {
     );
     const info = infoRes.data;
 
-    // Find the MP3 128k format (or the first audio format)
+    // Find the best audio format
     let audioObj = null;
     if (Array.isArray(info?.formats)) {
-      audioObj = info.formats.find(
-        f =>
-          (f.type === "audio" || f.mime_type?.includes("audio")) &&
-          (f.quality === "128" || f.quality === "128kbps" || f.quality === "MP3 128kbps")
-      ) || info.formats.find(f => f.type === "audio" || f.mime_type?.includes("audio"));
+      audioObj =
+        info.formats.find(
+          f =>
+            (f.type === "audio" || f.mime_type?.includes("audio")) &&
+            (f.quality === "128" || f.quality === "128kbps" || f.quality === "MP3 128kbps")
+        ) ||
+        info.formats.find(f => f.type === "audio" || f.mime_type?.includes("audio"));
     }
     if (!audioObj || !audioObj.key) {
       return res.status(404).json({ error: "No MP3 format found", formats: info?.formats });
@@ -60,7 +72,6 @@ export default async function handler(req, res) {
     if (typeof downloadRes.data === "object" && downloadRes.data.url) {
       downloadUrl = downloadRes.data.url;
     } else if (typeof downloadRes.data === "string") {
-      // Sometimes the raw URL is returned as base64 or plain string
       downloadUrl = downloadRes.data;
     }
 
@@ -69,9 +80,7 @@ export default async function handler(req, res) {
       thumbnail: info.thumbnail || info.thumb,
       duration: info.duration,
       quality: audioObj.quality,
-      download: downloadUrl,
-      key: audioObj.key,
-      info: info // For debugging, remove in prod
+      download: downloadUrl
     });
   } catch (e) {
     res.status(500).json({

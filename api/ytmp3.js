@@ -1,93 +1,61 @@
 import axios from "axios";
 
-// Browser-like headers for SaveTube API (required for access)
-function getBrowserHeaders() {
-  return {
-    "Accept": "*/*",
-    "Accept-Encoding": "gzip, deflate, br, zstd",
-    "Accept-Language": "en-GB,en;q=0.9,si-LK;q=0.8,si;q=0.7,en-US;q=0.6,hi;q=0.5",
-    "Origin": "https://ytmp3.at",
-    "Referer": "https://ytmp3.at/",
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36",
-    "sec-ch-ua": "\"Chromium\";v=\"136\", \"Google Chrome\";v=\"136\", \"Not.A/Brand\";v=\"99\"",
-    "sec-ch-ua-mobile": "?0",
-    "sec-ch-ua-platform": "\"Windows\"",
-    "Sec-Fetch-Dest": "empty",
-    "Sec-Fetch-Mode": "cors",
-    "Sec-Fetch-Site": "cross-site",
-    "priority": "u=1, i",
-    "Content-Type": "application/json"
-  };
-}
-
 export default async function handler(req, res) {
   const { url } = req.query;
-  if (!url) {
-    return res.status(400).json({ error: "Missing YouTube URL parameter ?url=" });
-  }
+  if (!url) return res.status(400).json({ error: "Missing YouTube URL (?url=...)" });
 
   try {
-    // 1. Get CDN
-    const cdnRes = await axios.get("https://media.savetube.me/api/random-cdn", {
-      headers: getBrowserHeaders()
-    });
-    const cdn = cdnRes.data?.cdn;
-    if (!cdn) throw new Error("Failed to get CDN");
-
-    // 2. Get video info using SaveTube API
+    // 1. Get video info from yt1s.com
     const infoRes = await axios.post(
-      `${cdn}/v2/info`,
-      { url },
-      { headers: getBrowserHeaders() }
+      "https://yt1s.com/api/ajaxSearch/index",
+      new URLSearchParams({ q: url, vt: "home" }),
+      {
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
+          "Origin": "https://yt1s.com",
+          "Referer": "https://yt1s.com/en279",
+          "User-Agent": "Mozilla/5.0"
+        }
+      }
     );
     const info = infoRes.data;
 
-    // 3. Find the best available MP3 (audio) format
-    let audioObj = null;
-    if (Array.isArray(info?.formats)) {
-      audioObj =
-        info.formats.find(
-          f =>
-            (f.type === "audio" || (f.mime_type && f.mime_type.includes("audio"))) &&
-            (f.quality === "128" || f.quality === "128kbps" || f.quality === "MP3 128kbps")
-        ) ||
-        info.formats.find(f => f.type === "audio" || (f.mime_type && f.mime_type.includes("audio")));
-    }
-    if (!audioObj || !audioObj.key) {
-      return res.status(404).json({ error: "No MP3 format found", formats: info?.formats });
+    if (!info.vid || !info.links || !info.links.mp3 || !info.links.mp3["128"]) {
+      return res.status(400).json({ error: "Failed to extract video info or MP3 link", info });
     }
 
-    // 4. Request download link for MP3
-    const downloadRes = await axios.post(
-      `${cdn.replace(/\/v2\/info$/, "")}/download`,
+    // 2. Convert to MP3 (128kbps)
+    const convRes = await axios.post(
+      "https://yt1s.com/api/ajaxConvert/convert",
+      new URLSearchParams({
+        vid: info.vid,
+        k: info.links.mp3["128"].k
+      }),
       {
-        downloadType: "audio",
-        quality: audioObj.quality,
-        key: audioObj.key
-      },
-      { headers: getBrowserHeaders() }
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
+          "Origin": "https://yt1s.com",
+          "Referer": "https://yt1s.com/en279",
+          "User-Agent": "Mozilla/5.0"
+        }
+      }
     );
-
-    let downloadUrl = null;
-    if (typeof downloadRes.data === "object" && downloadRes.data.url) {
-      downloadUrl = downloadRes.data.url;
-    } else if (typeof downloadRes.data === "string") {
-      downloadUrl = downloadRes.data;
-    }
+    const conv = convRes.data;
 
     res.json({
       title: info.title,
-      thumbnail: info.thumbnail || info.thumb,
-      duration: info.duration,
-      quality: audioObj.quality,
-      download: downloadUrl
+      thumbnail: info.thumbnail,
+      duration: info.time,
+      mp3: {
+        quality: "128kbps",
+        download: conv.dlink
+      }
     });
   } catch (e) {
     res.status(500).json({
-      error: "Failed to fetch or parse SaveTube API",
+      error: "Failed to fetch from yt1s.com",
       detail: e.message,
-      response: e.response?.data,
-      status: e.response?.status
+      response: e.response?.data
     });
   }
 }

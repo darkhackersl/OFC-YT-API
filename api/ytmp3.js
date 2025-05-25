@@ -1,15 +1,4 @@
-import { load } from "cheerio";
 import axios from "axios";
-
-const agents = [
-  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
-  'Mozilla/5.0 (iPhone; CPU iPhone OS 13_2_3 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/13.0.3 Mobile/15E148 Safari/604.1',
-  'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
-];
-
-function getRandomAgent() {
-  return agents[Math.floor(Math.random() * agents.length)];
-}
 
 export default async function handler(req, res) {
   const { url } = req.query;
@@ -18,68 +7,61 @@ export default async function handler(req, res) {
   }
 
   try {
-    const { data: homeHtml } = await axios.get("https://ytmp3.at/", {
-      headers: { "User-Agent": getRandomAgent() }
-    });
-    const $ = load(homeHtml);
-    const csrf = $('input[name="token"]').val();
+    // 1. Get CDN
+    const cdnRes = await axios.get("https://media.savetube.me/api/random-cdn");
+    const cdn = cdnRes.data?.cdn || "https://cdn306.savetube.su";
 
-    const { data: resultHtml } = await axios.post(
-      "https://ytmp3.at/api/ajaxSearch",
-      new URLSearchParams({ query: url, token: csrf }),
+    // 2. Get video info
+    const infoRes = await axios.post(
+      `${cdn}/v2/info`,
+      { url },
       {
         headers: {
-          "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
-          "Referer": "https://ytmp3.at/",
-          "User-Agent": getRandomAgent()
+          "Content-Type": "application/json",
+          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
         }
       }
     );
 
-    const $$ = load(resultHtml.result || resultHtml.html || resultHtml);
-    const image = $$("img").attr("src");
-    const title = $$("h3").text();
-    const duration = $$("p").first().text();
-    const qualities = [];
-    $$('select#quality option').each((_, el) => {
-      qualities.push({ value: $$(el).attr("value"), label: $$(el).text() });
-    });
-
-    const defaultQuality = qualities[0]?.value || "128";
-    const v_id = url.match(/(?:v=|\/)([0-9A-Za-z_-]{11})/)?.[1];
-    if (!v_id) {
-      return res.status(400).json({ error: "Invalid or missing YouTube video ID in URL" });
+    const data = infoRes.data;
+    if (!data || !data.title) {
+      return res.status(500).json({ error: "Failed to retrieve video info", raw: data });
     }
 
-    const { data: convertHtml } = await axios.post(
-      "https://ytmp3.at/api/ajaxConvert",
-      new URLSearchParams({
-        v_id,
-        ftype: "mp3",
-        fquality: defaultQuality,
-        token: csrf
-      }),
-      {
-        headers: {
-          "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
-          "Referer": "https://ytmp3.at/",
-          "User-Agent": getRandomAgent()
+    // Gather audio and video download links
+    // Depending on the API response format, adjust as needed
+    const mp3 = [];
+    const mp4 = [];
+    if (Array.isArray(data?.formats)) {
+      for (const f of data.formats) {
+        if (f.type === "audio" || f.mime_type?.includes("audio")) {
+          mp3.push({
+            label: f.quality || f.qualityLabel || f.mime_type,
+            url: f.url || f.download
+          });
+        }
+        if (f.type === "video" || f.mime_type?.includes("video")) {
+          mp4.push({
+            label: f.quality || f.qualityLabel || f.mime_type,
+            url: f.url || f.download
+          });
         }
       }
-    );
-
-    const $$$ = load(convertHtml.result || convertHtml.html || convertHtml);
-    const downloadLink = $$$('a[download]').attr("href");
+    }
 
     res.json({
-      type: "mp3",
-      title,
-      image,
-      duration,
-      qualities,
-      download: downloadLink ? (downloadLink.startsWith("http") ? downloadLink : "https://ytmp3.at" + downloadLink) : null
+      title: data.title,
+      duration: data.duration,
+      thumbnail: data.thumbnail || data.thumb || "",
+      audio: mp3,
+      video: mp4
     });
   } catch (e) {
-    res.status(500).json({ error: "Failed to fetch or parse ytmp3.at", detail: e.message });
+    res.status(500).json({
+      error: "Failed to fetch or parse savetube API",
+      detail: e.message,
+      response: e.response?.data,
+      status: e.response?.status
+    });
   }
 }

@@ -1,40 +1,85 @@
-import { exec } from "child_process";
-import util from "util";
-
-const execAsync = util.promisify(exec);
+import axios from "axios";
+import { load } from "cheerio";
 
 export default async function handler(req, res) {
-  const { url, format = "bestaudio[ext=mp3]/bestaudio/best" } = req.query;
+  const { url } = req.query;
   if (!url) return res.status(400).json({ error: "Missing YouTube URL (?url=...)" });
 
   try {
-    // yt-dlp must be installed on your server/VPS (not supported on Vercel/Lambda)
-    // Command: yt-dlp -j --no-warnings -f FORMAT --no-playlist "URL"
-    const { stdout } = await execAsync(
-      `yt-dlp -j --no-warnings -f "${format}" --no-playlist "${url}"`
-    );
-    const info = JSON.parse(stdout);
+    // Step 1: Fetch SaveFrom main page to get cookies & initial params (simulate browser)
+    const mainPage = await axios.get("https://en.savefrom.net/1-youtube-video-downloader-4/");
+    const cookies = mainPage.headers["set-cookie"]?.map(c => c.split(";")[0]).join("; ") || "";
 
-    // Extract best audio/mp3/video URL
-    let download = null;
-    if (info.url) download = info.url;
-    else if (info.formats && info.formats[0] && info.formats[0].url) download = info.formats[0].url;
+    // Step 2: Call SaveFrom AJAX endpoint (undocumented, subject to change!)
+    const resp = await axios.post(
+      "https://worker.sf-tools.com/savefrom.php",
+      new URLSearchParams({
+        sf_url: url,
+        sf_submit: "",
+        new: 2,
+        lang: "en",
+        app: "",
+        country: "us",
+        os: "Windows",
+        browser: "Chrome"
+      }),
+      {
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
+          "Cookie": cookies,
+          "Origin": "https://en.savefrom.net",
+          "Referer": "https://en.savefrom.net/1-youtube-video-downloader-4/",
+          "User-Agent": "Mozilla/5.0"
+        }
+      }
+    );
+
+    // Step 3: Parse response for download links and meta
+    const html = resp.data;
+    const $ = load(html);
+    const result = [];
+
+    $("a.link-download").each((i, el) => {
+      const quality = $(el).find(".title").text().trim() || "unknown";
+      const type = $(el).find(".format").text().trim();
+      const downloadUrl = $(el).attr("href");
+      if (downloadUrl) {
+        result.push({ quality, type, url: downloadUrl });
+      }
+    });
+
+    // Prefer lowest quality
+    const lowQuality = result[result.length - 1] || result[0];
+
+    // Extract meta: title, thumbnail, duration (if present)
+    const title = $(".info-box .title").text().trim() ||
+                  $("meta[property='og:title']").attr("content") ||
+                  "";
+    const thumbnail = $(".info-box img").attr("src") ||
+                      $("meta[property='og:image']").attr("content") ||
+                      "";
+    let duration = "";
+    // Sometimes duration is within the .info-box or nearby
+    $(".info-box .duration, .info-box .length").each((i, el) => {
+      const text = $(el).text().trim();
+      if (text && !duration) duration = text;
+    });
+
+    if (!lowQuality) {
+      return res.status(404).json({ error: "No download links found", debug: html });
+    }
 
     res.json({
-      title: info.title,
-      thumbnail: info.thumbnail,
-      duration: info.duration,
-      uploader: info.uploader,
-      webpage_url: info.webpage_url,
-      ext: info.ext,
-      format: info.format,
-      download
+      video: url,
+      title,
+      thumbnail,
+      duration,
+      lowQuality
     });
   } catch (e) {
     res.status(500).json({
-      error: "yt-dlp failed",
-      detail: e.message,
-      stderr: e.stderr
+      error: "Failed to fetch from savefrom.net",
+      detail: e.message
     });
   }
 }

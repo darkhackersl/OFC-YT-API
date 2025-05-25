@@ -1,63 +1,45 @@
 const express = require('express');
-const axios = require('axios');
-const cheerio = require('cheerio');
+const puppeteer = require('puppeteer');
+const cors = require('cors');
 
 const app = express();
+const PORT = 3000;
 
-app.get('/api/ytmp3', async (req, res) => {
-  const url = req.query.url;
-  if (!url) {
-    return res.status(400).json({ error: 'URL is required' });
-  }
+app.use(cors());
 
-  try {
-    const response = await axios.get(`https://ytmp3.at/api/v1/convert?url=${url}`);
-    const $ = cheerio.load(response.data);
-    const videoDetails = {
-      title: $('h3.text-left.mt-2.text-white.font-[500].text-[16px].sm:text-[22px]').text(),
-      image: $('img').attr('src'),
-      duration: $('p.text-left.text-gray-100').text(),
-    };
+// TikTok Search Scraper
+app.get('/search', async (req, res) => {
+    const keyword = req.query.q;
+    if (!keyword) return res.status(400).send({ error: "Missing 'q' parameter" });
 
-    const qualities = [];
-    $('select#quality option').each((index, element) => {
-      qualities.push({ value: $(element).val(), text: $(element).text() });
-    });
+    try {
+        const browser = await puppeteer.launch({ headless: "new" });
+        const page = await browser.newPage();
+        await page.goto(`https://www.tiktok.com/search?q=${encodeURIComponent(keyword)}`, {
+            waitUntil: 'networkidle2',
+        });
 
-    res.json({ videoDetails, qualities });
-  } catch (error) {
-    console.error(error);
-    res.status(500).json({ error: 'Failed to fetch video details' });
-  }
-});
+        const data = await page.evaluate(() => {
+            const results = [];
+            const items = document.querySelectorAll('div[data-e2e="search-video-item"]');
+            items.forEach(item => {
+                const video = {
+                    title: item.querySelector('h3')?.innerText || '',
+                    videoUrl: item.querySelector('a')?.href,
+                    thumbnail: item.querySelector('img')?.src,
+                };
+                results.push(video);
+            });
+            return results;
+        });
 
-app.get('/api/ytmp3/download', async (req, res) => {
-  const url = req.query.url;
-  const quality = req.query.quality;
-  const type = req.query.type; // add type parameter (mp3 or mp4)
-  if (!url || !quality || !type) {
-    return res.status(400).json({ error: 'URL, quality, and type are required' });
-  }
-
-  try {
-    const response = await axios.get(`https://ytmp3.at/api/v1/convert?url=${url}&quality=${quality}`);
-    const $ = cheerio.load(response.data);
-    let downloadLink;
-    if (type === 'mp3') {
-      downloadLink = $('a.download.btn.text-left.w-40.bg-green-600.hover:bg-green-500.border-green-500[href*=".mp3"]').attr('href');
-    } else if (type === 'mp4') {
-      downloadLink = $('a.download.btn.text-left.w-40.bg-green-600.hover:bg-green-500.border-green-500[href*=".mp4"]').attr('href');
-    } else {
-      return res.status(400).json({ error: 'Invalid type. Only mp3 and mp4 are supported.' });
+        await browser.close();
+        res.json({ keyword, results: data });
+    } catch (err) {
+        res.status(500).send({ error: "Scraping failed", details: err.message });
     }
-
-    res.json({ downloadLink });
-  } catch (error) {
-    console.error(error);
-    res.status(500).json({ error: 'Failed to generate download link' });
-  }
 });
 
-app.listen(3000, () => {
-  console.log('Server listening on port 3000');
+app.listen(PORT, () => {
+    console.log(`TikTok API running at http://localhost:${PORT}`);
 });

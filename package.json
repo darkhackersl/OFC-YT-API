@@ -1,12 +1,13 @@
 {
-  "name": "ytmp3-api",
+  "name": "ytmp3-mp4-api",
   "version": "1.0.0",
+  "type": "module",
+  "main": "index.js",
   "scripts": {
-    "start": "node index.js"
+    "dev": "vercel dev"
   },
   "dependencies": {
-    "express": "^4.17.1",
-    "axios": "^0.21.1",
-    "cheerio": "^1.0.0-rc.10"
+    "axios": "^1.7.0",
+    "cheerio": "^1.0.0-rc.12"
   }
 }

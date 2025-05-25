@@ -1,5 +1,6 @@
 const express = require('express');
-const puppeteer = require('puppeteer');
+const axios = require('axios');
+const cheerio = require('cheerio');
 const cors = require('cors');
 
 const app = express();
@@ -7,39 +8,43 @@ const PORT = 3000;
 
 app.use(cors());
 
-// TikTok Search Scraper
-app.get('/search', async (req, res) => {
-    const keyword = req.query.q;
-    if (!keyword) return res.status(400).send({ error: "Missing 'q' parameter" });
+app.get('/download', async (req, res) => {
+    const videoUrl = req.query.url;
+    if (!videoUrl || !videoUrl.includes('tiktok.com')) {
+        return res.status(400).json({ error: 'Invalid TikTok URL' });
+    }
 
     try {
-        const browser = await puppeteer.launch({ headless: "new" });
-        const page = await browser.newPage();
-        await page.goto(`https://www.tiktok.com/search?q=${encodeURIComponent(keyword)}`, {
-            waitUntil: 'networkidle2',
+        const formData = new URLSearchParams();
+        formData.append('id', videoUrl);
+        formData.append('locale', 'en');
+        
+        const response = await axios.post('https://ssstik.io/abc', formData, {
+            headers: {
+                'content-type': 'application/x-www-form-urlencoded',
+                'user-agent': 'Mozilla/5.0'
+            }
         });
 
-        const data = await page.evaluate(() => {
-            const results = [];
-            const items = document.querySelectorAll('div[data-e2e="search-video-item"]');
-            items.forEach(item => {
-                const video = {
-                    title: item.querySelector('h3')?.innerText || '',
-                    videoUrl: item.querySelector('a')?.href,
-                    thumbnail: item.querySelector('img')?.src,
-                };
-                results.push(video);
-            });
-            return results;
+        const $ = cheerio.load(response.data);
+        const links = [];
+        $('a').each((i, el) => {
+            const href = $(el).attr('href');
+            const text = $(el).text();
+            if (href && text.includes('Download')) {
+                links.push({ label: text, url: href });
+            }
         });
 
-        await browser.close();
-        res.json({ keyword, results: data });
+        if (links.length === 0) throw new Error('No download links found');
+
+        res.json({ original: videoUrl, downloadLinks: links });
+
     } catch (err) {
-        res.status(500).send({ error: "Scraping failed", details: err.message });
+        res.status(500).json({ error: 'Failed to get download link', details: err.message });
     }
 });
 
 app.listen(PORT, () => {
-    console.log(`TikTok API running at http://localhost:${PORT}`);
+    console.log(`API running on http://localhost:${PORT}`);
 });

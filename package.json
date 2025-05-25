@@ -1,26 +1,19 @@
 {
-  "name": "yt-api-thenux-ai",
+  "name": "yt-savefrom-api",
   "version": "1.0.0",
-  "description": "YouTube download API using yt-dlp for Thenux-ai",
-  "main": "api/thenux.js",
+  "description": "A simple API for downloading YouTube videos using savefrom.net scraping.",
+  "main": "api/savefrom.js",
   "type": "module",
   "scripts": {
-    "start": "node api/thenux.js"
+    "start": "node api/savefrom.js"
   },
   "dependencies": {
-    "util": "^0.12.5"
+    "axios": "^1.6.8",
+    "cheerio": "^1.0.0-rc.12"
   },
   "engines": {
     "node": ">=16"
   },
-  "keywords": [
-    "youtube",
-    "yt-dlp",
-    "api",
-    "mp3",
-    "mp4",
-    "thenux-ai"
-  ],
-  "author": "Thenux-ai",
+  "author": "darkhackersl",
   "license": "MIT"
 }

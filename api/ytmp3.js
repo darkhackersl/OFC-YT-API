@@ -1,6 +1,16 @@
 import { load } from "cheerio";
 import axios from "axios";
 
+const agents = [
+  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+  'Mozilla/5.0 (iPhone; CPU iPhone OS 13_2_3 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/13.0.3 Mobile/15E148 Safari/604.1',
+  'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+];
+
+function getRandomAgent() {
+  return agents[Math.floor(Math.random() * agents.length)];
+}
+
 export default async function handler(req, res) {
   const { url } = req.query;
   if (!url) {
@@ -8,22 +18,20 @@ export default async function handler(req, res) {
   }
 
   try {
-    // Fetch CSRF token
-    const { data: homeHtml } = await axios.get("https://ytmp3.at/");
+    const { data: homeHtml } = await axios.get("https://ytmp3.at/", {
+      headers: { "User-Agent": getRandomAgent() }
+    });
     const $ = load(homeHtml);
     const csrf = $('input[name="token"]').val();
 
-    // Request video details
     const { data: resultHtml } = await axios.post(
       "https://ytmp3.at/api/ajaxSearch",
-      new URLSearchParams({
-        query: url,
-        token: csrf
-      }),
+      new URLSearchParams({ query: url, token: csrf }),
       {
         headers: {
           "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
-          "Referer": "https://ytmp3.at/"
+          "Referer": "https://ytmp3.at/",
+          "User-Agent": getRandomAgent()
         }
       }
     );
@@ -37,7 +45,6 @@ export default async function handler(req, res) {
       qualities.push({ value: $$(el).attr("value"), label: $$(el).text() });
     });
 
-    // Prepare download link for MP3 (default quality)
     const defaultQuality = qualities[0]?.value || "128";
     const v_id = url.match(/(?:v=|\/)([0-9A-Za-z_-]{11})/)?.[1];
     if (!v_id) {
@@ -55,7 +62,8 @@ export default async function handler(req, res) {
       {
         headers: {
           "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
-          "Referer": "https://ytmp3.at/"
+          "Referer": "https://ytmp3.at/",
+          "User-Agent": getRandomAgent()
         }
       }
     );

@@ -1,5 +1,5 @@
+import { load } from "cheerio";
 import axios from "axios";
-import cheerio from "cheerio";
 
 export default async function handler(req, res) {
   const { url } = req.query;
@@ -10,7 +10,7 @@ export default async function handler(req, res) {
   try {
     // Fetch CSRF token
     const { data: homeHtml } = await axios.get("https://ytmp3.at/");
-    const $ = cheerio.load(homeHtml);
+    const $ = load(homeHtml);
     const csrf = $('input[name="token"]').val();
 
     // Request video details
@@ -28,7 +28,7 @@ export default async function handler(req, res) {
       }
     );
 
-    const $$ = cheerio.load(resultHtml.result || resultHtml.html || resultHtml);
+    const $$ = load(resultHtml.result || resultHtml.html || resultHtml);
     const image = $$("img").attr("src");
     const title = $$("h3").text();
     const duration = $$("p").first().text();
@@ -60,7 +60,7 @@ export default async function handler(req, res) {
       }
     );
 
-    const $$$ = cheerio.load(convertHtml.result || convertHtml.html || convertHtml);
+    const $$$ = load(convertHtml.result || convertHtml.html || convertHtml);
     const downloadLink = $$$('a[download]').attr("href");
 
     res.json({

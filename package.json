@@ -2,10 +2,10 @@
   "name": "yt-savefrom-api",
   "version": "1.0.0",
   "description": "A simple API for downloading YouTube videos using savefrom.net scraping.",
-  "main": "api/thenux.js",
+  "main": "api/yt-download.js",
   "type": "module",
   "scripts": {
-    "start": "node api/thenux.js"
+    "start": "node api/yt-download.js"
   },
   "dependencies": {
     "axios": "^1.6.8",
